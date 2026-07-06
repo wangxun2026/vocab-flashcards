@@ -1,0 +1,8 @@
+{
+  "name": "Vocab Flashcards",
+  "short_name": "Vocab",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#1c1c28",
+  "theme_color": "#1c1c28"
+}
