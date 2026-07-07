@@ -153,6 +153,15 @@ h2, h3 { font-weight: 600; }
 }
 
 .ndr-word { font-weight: 600; font-size: 17px; }
+.ndr-header-btns { display: flex; gap: 6px; }
+.ndr-autofill-btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #2a4a34;
+  color: #9affc0;
+  font-weight: 600;
+}
 .needs-details-row input {
   padding: 10px;
   border-radius: 8px;

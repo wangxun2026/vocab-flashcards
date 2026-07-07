@@ -155,7 +155,10 @@ function renderAdd() {
     row.innerHTML = `
       <div class="ndr-header">
         <div class="ndr-word">${escapeHtml(c.word)}</div>
-        <button class="ndr-delete-btn" title="Delete">✕</button>
+        <div class="ndr-header-btns">
+          <button class="ndr-autofill-btn">Auto-fill</button>
+          <button class="ndr-delete-btn" title="Delete">✕</button>
+        </div>
       </div>
       <input type="text" placeholder="Definition" class="ndr-def-input" />
       <input type="text" placeholder="Context — sentence, or where you saw it" class="ndr-ctx-input" />
@@ -183,8 +186,44 @@ function renderAdd() {
       saveCards(cards);
       renderAdd();
     });
+    row.querySelector(".ndr-autofill-btn").addEventListener("click", async (e) => {
+      const btn = e.target;
+      btn.textContent = "…";
+      btn.disabled = true;
+      try {
+        const entry = await lookupWord(c.word);
+        if (entry.definition) row.querySelector(".ndr-def-input").value = entry.definition;
+        if (entry.example) row.querySelector(".ndr-ctx-input").value = entry.example;
+        if (entry.synonyms) row.querySelector(".ndr-syn-input").value = entry.synonyms;
+        btn.textContent = "Auto-fill";
+      } catch {
+        btn.textContent = "Not found";
+      }
+      btn.disabled = false;
+    });
     list.appendChild(row);
   });
+}
+
+async function lookupWord(word) {
+  const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word.toLowerCase())}`);
+  if (!res.ok) throw new Error("lookup failed");
+  const data = await res.json();
+  const meanings = (data[0] && data[0].meanings) || [];
+  let definition = "";
+  let example = "";
+  const synonyms = new Set();
+  for (const m of meanings) {
+    for (const d of m.definitions || []) {
+      if (!definition && d.definition) {
+        definition = m.partOfSpeech ? `(${m.partOfSpeech}) ${d.definition}` : d.definition;
+      }
+      if (!example && d.example) example = d.example;
+      (d.synonyms || []).forEach((s) => synonyms.add(s));
+    }
+    (m.synonyms || []).forEach((s) => synonyms.add(s));
+  }
+  return { definition, example, synonyms: [...synonyms].slice(0, 6).join(", ") };
 }
 
 document.getElementById("quick-add-form").addEventListener("submit", (e) => {
