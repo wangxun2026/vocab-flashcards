@@ -71,9 +71,11 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 let reviewQueue = [];
 let currentCard = null;
 let revealed = false;
+let practiceMode = false;
 
 function buildReviewQueue() {
   const today = todayStr();
+  if (practiceMode) return; // practice queue is managed manually
   reviewQueue = cards.filter((c) => c.definition && c.dueDate <= today);
 }
 
@@ -93,6 +95,7 @@ function renderReview() {
   const cardEl = document.getElementById("flashcard");
   const controls = document.getElementById("review-controls");
   if (reviewQueue.length === 0) {
+    practiceMode = false;
     empty.style.display = "block";
     cardEl.style.display = "none";
     controls.style.display = "none";
@@ -106,8 +109,19 @@ function renderReview() {
   document.getElementById("card-back").innerHTML = "";
   document.getElementById("card-category").textContent = currentCard.category;
   document.getElementById("card-hint").style.display = "block";
-  document.getElementById("review-count").textContent = `${reviewQueue.length} due`;
+  document.getElementById("review-count").textContent = practiceMode
+    ? `${reviewQueue.length} to practice`
+    : `${reviewQueue.length} due`;
 }
+
+document.getElementById("btn-practice").addEventListener("click", () => {
+  practiceMode = true;
+  reviewQueue = cards
+    .filter((c) => c.definition)
+    .slice()
+    .sort(() => Math.random() - 0.5);
+  renderReview();
+});
 
 document.getElementById("flashcard").addEventListener("click", () => {
   if (!currentCard || revealed) return;
@@ -119,6 +133,17 @@ document.getElementById("flashcard").addEventListener("click", () => {
 
 function gradeCard(knewIt) {
   if (!currentCard) return;
+  if (practiceMode) {
+    // Practice doesn't advance the schedule; a miss still resets the card
+    if (!knewIt) {
+      currentCard.box = 1;
+      currentCard.dueDate = addDays(todayStr(), BOX_INTERVALS_DAYS[1]);
+      saveCards(cards);
+    }
+    reviewQueue.shift();
+    renderReview();
+    return;
+  }
   if (knewIt) {
     currentCard.box = Math.min(currentCard.box + 1, BOX_INTERVALS_DAYS.length - 1);
   } else {
@@ -276,22 +301,76 @@ function renderBrowse() {
       c.morphology ? `<div class="browse-extra"><span class="browse-extra-label">morph</span> ${escapeHtml(c.morphology)}</div>` : "",
       c.synonyms ? `<div class="browse-extra"><span class="browse-extra-label">syn</span> ${escapeHtml(c.synonyms)}</div>` : "",
     ].join("");
+    const dueNow = c.dueDate <= todayStr();
     row.innerHTML = `
       <div class="browse-row-main">
         <div class="browse-word">${escapeHtml(c.word)} <span class="browse-cat">${escapeHtml(c.category)}</span></div>
         <div class="browse-def">${escapeHtml(c.definition || "(no definition yet)")}</div>
         ${extras}
-        <div class="browse-meta">box ${c.box} · due ${c.dueDate}</div>
+        <div class="browse-meta">box ${c.box} · ${dueNow ? "due now" : "due " + c.dueDate}</div>
       </div>
-      <button class="browse-delete-btn" title="Delete">✕</button>
+      <div class="browse-row-btns">
+        <button class="browse-due-btn" title="Review now">${dueNow ? "✓" : "↺"}</button>
+        <button class="browse-edit-btn" title="Edit">✎</button>
+        <button class="browse-delete-btn" title="Delete">✕</button>
+      </div>
     `;
+    const dueBtn = row.querySelector(".browse-due-btn");
+    if (dueNow) dueBtn.disabled = true;
+    dueBtn.addEventListener("click", () => {
+      c.dueDate = todayStr();
+      saveCards(cards);
+      renderBrowse();
+    });
+    row.querySelector(".browse-edit-btn").addEventListener("click", () => {
+      renderEditForm(row, c);
+    });
     row.querySelector(".browse-delete-btn").addEventListener("click", () => {
+      if (!confirm(`Delete "${c.word}"?`)) return;
       cards = cards.filter((x) => x.id !== c.id);
       saveCards(cards);
       renderBrowse();
     });
     list.appendChild(row);
   });
+}
+
+function renderEditForm(row, c) {
+  refreshGroupDatalist();
+  row.className = "needs-details-row";
+  row.innerHTML = `
+    <div class="ndr-header">
+      <input type="text" class="edit-word" placeholder="Word" />
+    </div>
+    <input type="text" class="edit-def" placeholder="Definition" />
+    <input type="text" class="edit-ctx" placeholder="Context — sentence, or where you saw it" />
+    <input type="text" class="edit-morph" placeholder="Morphology — roots, prefix, suffix" />
+    <input type="text" class="edit-syn" placeholder="Synonyms" />
+    <div class="ndr-footer">
+      <input type="text" class="edit-cat" list="group-datalist" placeholder="Group — by meaning/theme" />
+      <button class="edit-cancel-btn">Cancel</button>
+      <button class="ndr-save-btn edit-save-btn">Save</button>
+    </div>
+  `;
+  row.querySelector(".edit-word").value = c.word;
+  row.querySelector(".edit-def").value = c.definition;
+  row.querySelector(".edit-ctx").value = c.context;
+  row.querySelector(".edit-morph").value = c.morphology;
+  row.querySelector(".edit-syn").value = c.synonyms;
+  row.querySelector(".edit-cat").value = c.category === "general" ? "" : c.category;
+  row.querySelector(".edit-save-btn").addEventListener("click", () => {
+    const word = row.querySelector(".edit-word").value.trim();
+    if (!word) return;
+    c.word = word;
+    c.definition = row.querySelector(".edit-def").value.trim();
+    c.context = row.querySelector(".edit-ctx").value.trim();
+    c.morphology = row.querySelector(".edit-morph").value.trim();
+    c.synonyms = row.querySelector(".edit-syn").value.trim();
+    c.category = row.querySelector(".edit-cat").value.trim().toLowerCase() || "general";
+    saveCards(cards);
+    renderBrowse();
+  });
+  row.querySelector(".edit-cancel-btn").addEventListener("click", renderBrowse);
 }
 
 document.getElementById("browse-search").addEventListener("input", renderBrowse);

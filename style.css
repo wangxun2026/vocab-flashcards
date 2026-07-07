@@ -35,6 +35,17 @@ main {
   font-size: 16px;
 }
 
+#btn-practice {
+  margin-top: 12px;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 10px;
+  background: #7a7aff;
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+}
+
 #flashcard {
   min-height: 260px;
   background: #2a2a3d;
@@ -226,6 +237,38 @@ h2, h3 { font-weight: 600; }
   padding: 10px;
   border-radius: 10px;
   margin-bottom: 8px;
+}
+
+.browse-row-main { flex: 1; min-width: 0; }
+
+.browse-row-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.browse-due-btn, .browse-edit-btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #444460;
+  color: #f0f0f5;
+}
+
+.browse-due-btn:disabled { opacity: 0.4; }
+
+.edit-cancel-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #444460;
+  color: #f0f0f5;
+}
+
+.edit-word {
+  font-weight: 600;
+  font-size: 17px;
+  width: 100%;
 }
 
 .browse-word { font-weight: 600; }
