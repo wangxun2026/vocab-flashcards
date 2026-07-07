@@ -48,9 +48,6 @@
       <input type="text" id="browse-search" placeholder="Search..." />
       <select id="browse-filter">
         <option value="all">all</option>
-        <option value="general">general</option>
-        <option value="chemistry">chemistry</option>
-        <option value="lanthanides">lanthanides</option>
       </select>
     </div>
     <div id="browse-count"></div>
@@ -63,6 +60,8 @@
   <button class="tab-btn" data-view="add">Add</button>
   <button class="tab-btn" data-view="browse">Browse</button>
 </nav>
+
+<datalist id="group-datalist"></datalist>
 
 <script src="seed.js"></script>
 <script src="app.js"></script>

@@ -132,8 +132,19 @@ function gradeCard(knewIt) {
 document.getElementById("btn-again").addEventListener("click", () => gradeCard(false));
 document.getElementById("btn-good").addEventListener("click", () => gradeCard(true));
 
+// ---------- Groups ----------
+function allGroups() {
+  return [...new Set(cards.map((c) => c.category).filter(Boolean))].sort();
+}
+
+function refreshGroupDatalist() {
+  const dl = document.getElementById("group-datalist");
+  dl.innerHTML = allGroups().map((g) => `<option value="${escapeHtml(g)}"></option>`).join("");
+}
+
 // ---------- Add ----------
 function renderAdd() {
+  refreshGroupDatalist();
   const list = document.getElementById("needs-details-list");
   list.innerHTML = "";
   const needsDetails = cards.filter((c) => !c.definition);
@@ -151,15 +162,11 @@ function renderAdd() {
       <input type="text" placeholder="Morphology — roots, prefix, suffix" class="ndr-morph-input" />
       <input type="text" placeholder="Synonyms" class="ndr-syn-input" />
       <div class="ndr-footer">
-        <select class="ndr-cat-select">
-          <option value="general">general</option>
-          <option value="chemistry">chemistry</option>
-          <option value="lanthanides">lanthanides</option>
-        </select>
+        <input type="text" class="ndr-cat-select" list="group-datalist" placeholder="Group — by meaning/theme" />
         <button class="ndr-save-btn">Save</button>
       </div>
     `;
-    row.querySelector(".ndr-cat-select").value = c.category || "general";
+    row.querySelector(".ndr-cat-select").value = c.category === "general" ? "" : c.category || "";
     row.querySelector(".ndr-save-btn").addEventListener("click", () => {
       const def = row.querySelector(".ndr-def-input").value.trim();
       if (!def) return; // definition is the minimum for a reviewable card
@@ -167,7 +174,7 @@ function renderAdd() {
       c.context = row.querySelector(".ndr-ctx-input").value.trim();
       c.morphology = row.querySelector(".ndr-morph-input").value.trim();
       c.synonyms = row.querySelector(".ndr-syn-input").value.trim();
-      c.category = row.querySelector(".ndr-cat-select").value;
+      c.category = row.querySelector(".ndr-cat-select").value.trim().toLowerCase() || "general";
       saveCards(cards);
       renderAdd();
     });
@@ -205,9 +212,15 @@ document.getElementById("quick-add-form").addEventListener("submit", (e) => {
 
 // ---------- Browse ----------
 function renderBrowse() {
+  const filterEl = document.getElementById("browse-filter");
+  const prevFilter = filterEl.value;
+  filterEl.innerHTML =
+    '<option value="all">all</option>' +
+    allGroups().map((g) => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join("");
+  filterEl.value = [...filterEl.options].some((o) => o.value === prevFilter) ? prevFilter : "all";
   const list = document.getElementById("browse-list");
   const search = document.getElementById("browse-search").value.trim().toLowerCase();
-  const filterCat = document.getElementById("browse-filter").value;
+  const filterCat = filterEl.value;
   list.innerHTML = "";
   const filtered = cards.filter((c) => {
     const haystack = [c.word, c.definition, c.context, c.morphology, c.synonyms].join(" ").toLowerCase();
