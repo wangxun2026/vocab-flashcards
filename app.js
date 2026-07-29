@@ -1,4 +1,7 @@
 const STORAGE_KEY = "vocab_cards_v1";
+// Claude-backed lookup (definition + context + morphology + synonyms).
+// Empty string = not deployed yet; Auto-fill falls back to the free dictionary API.
+const LOOKUP_WORKER_URL = "";
 const BOX_INTERVALS_DAYS = [1, 1, 2, 4, 8, 16]; // index = box (1-5 used), box 0 unused
 
 function todayStr() {
@@ -219,6 +222,7 @@ function renderAdd() {
         const entry = await lookupWord(c.word);
         if (entry.definition) row.querySelector(".ndr-def-input").value = entry.definition;
         if (entry.example) row.querySelector(".ndr-ctx-input").value = entry.example;
+        if (entry.morphology) row.querySelector(".ndr-morph-input").value = entry.morphology;
         if (entry.synonyms) row.querySelector(".ndr-syn-input").value = entry.synonyms;
         btn.textContent = "Auto-fill";
       } catch {
@@ -231,6 +235,33 @@ function renderAdd() {
 }
 
 async function lookupWord(word) {
+  if (LOOKUP_WORKER_URL) {
+    try {
+      return await lookupViaWorker(word);
+    } catch {
+      // fall through to the free dictionary — it has no morphology, but beats nothing
+    }
+  }
+  return lookupViaDictionary(word);
+}
+
+async function lookupViaWorker(word) {
+  const res = await fetch(LOOKUP_WORKER_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ word }),
+  });
+  if (!res.ok) throw new Error("worker lookup failed");
+  const d = await res.json();
+  return {
+    definition: d.definition || "",
+    example: d.context || "",
+    morphology: d.morphology || "",
+    synonyms: d.synonyms || "",
+  };
+}
+
+async function lookupViaDictionary(word) {
   const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word.toLowerCase())}`);
   if (!res.ok) throw new Error("lookup failed");
   const data = await res.json();
@@ -248,7 +279,7 @@ async function lookupWord(word) {
     }
     (m.synonyms || []).forEach((s) => synonyms.add(s));
   }
-  return { definition, example, synonyms: [...synonyms].slice(0, 6).join(", ") };
+  return { definition, example, morphology: "", synonyms: [...synonyms].slice(0, 6).join(", ") };
 }
 
 document.getElementById("quick-add-form").addEventListener("submit", (e) => {
