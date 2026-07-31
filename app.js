@@ -1,7 +1,4 @@
 const STORAGE_KEY = "vocab_cards_v1";
-// Claude-backed lookup (definition + context + morphology + synonyms).
-// Empty string = not deployed yet; Auto-fill falls back to the free dictionary API.
-const LOOKUP_WORKER_URL = "";
 const BOX_INTERVALS_DAYS = [1, 1, 2, 4, 8, 16]; // index = box (1-5 used), box 0 unused
 
 function todayStr() {
@@ -235,33 +232,20 @@ function renderAdd() {
 }
 
 async function lookupWord(word) {
-  if (LOOKUP_WORKER_URL) {
-    try {
-      return await lookupViaWorker(word);
-    } catch {
-      // fall through to the free dictionary — it has no morphology, but beats nothing
-    }
-  }
-  return lookupViaDictionary(word);
-}
-
-async function lookupViaWorker(word) {
-  const res = await fetch(LOOKUP_WORKER_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ word }),
-  });
-  if (!res.ok) throw new Error("worker lookup failed");
-  const d = await res.json();
+  const [dict, morphology] = await Promise.all([
+    lookupDictionary(word).catch(() => null),
+    lookupMorphology(word).catch(() => ""),
+  ]);
+  if (!dict && !morphology) throw new Error("lookup failed");
   return {
-    definition: d.definition || "",
-    example: d.context || "",
-    morphology: d.morphology || "",
-    synonyms: d.synonyms || "",
+    definition: dict ? dict.definition : "",
+    example: dict ? dict.example : "",
+    synonyms: dict ? dict.synonyms : "",
+    morphology,
   };
 }
 
-async function lookupViaDictionary(word) {
+async function lookupDictionary(word) {
   const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word.toLowerCase())}`);
   if (!res.ok) throw new Error("lookup failed");
   const data = await res.json();
@@ -279,7 +263,168 @@ async function lookupViaDictionary(word) {
     }
     (m.synonyms || []).forEach((s) => synonyms.add(s));
   }
-  return { definition, example, morphology: "", synonyms: [...synonyms].slice(0, 6).join(", ") };
+  return { definition, example, synonyms: [...synonyms].slice(0, 6).join(", ") };
+}
+
+// ---------- Wiktionary etymology (fills the morphology field) ----------
+const WIKT_LANG_NAMES = {
+  en: "English", grc: "Ancient Greek", la: "Latin", "la-new": "New Latin",
+  ang: "Old English", enm: "Middle English", fro: "Old French", frm: "Middle French",
+  fr: "French", de: "German", nl: "Dutch", it: "Italian", es: "Spanish", pt: "Portuguese",
+  "la-lat": "Late Latin", "la-med": "Medieval Latin", "la-vul": "Vulgar Latin", "la-ecc": "Ecclesiastical Latin",
+  el: "Greek", "gem-pro": "Proto-Germanic", "ine-pro": "Proto-Indo-European", sa: "Sanskrit",
+  ar: "Arabic", he: "Hebrew", ja: "Japanese", zh: "Chinese", ru: "Russian", non: "Old Norse",
+  gml: "Middle Low German", egy: "Egyptian", akk: "Akkadian", sq: "Albanian", hy: "Armenian",
+  fa: "Persian", tr: "Turkish", ko: "Korean", sv: "Swedish", da: "Danish", no: "Norwegian",
+  is: "Icelandic", ga: "Irish", cy: "Welsh", mul: "multiple languages",
+};
+
+function wiktCleanToken(token) {
+  let gloss = "";
+  const tGloss = token.match(/<t:([^<>]*)>/);
+  if (tGloss) gloss = tGloss[1];
+  // Annotations can nest (Serendip<ety:der<en:Serendib>>) — strip innermost first
+  let text = token;
+  for (let i = 0; i < 5 && /<[^<>]*>/.test(text); i++) {
+    text = text.replace(/<[^<>]*>/g, "");
+  }
+  text = text.replace(/[<>]/g, "").trim();
+  const langWord = text.match(/^([a-z]{2,3}(?:-[a-z]+)?):(.+)$/);
+  if (langWord && WIKT_LANG_NAMES[langWord[1]]) {
+    text = `${WIKT_LANG_NAMES[langWord[1]]} ${langWord[2]}`;
+  }
+  return { text, gloss };
+}
+
+function renderWiktTemplate(raw) {
+  const parts = raw.split("|");
+  const name = parts[0].trim().toLowerCase();
+  const positional = [];
+  const named = {};
+  for (let i = 1; i < parts.length; i++) {
+    const p = parts[i];
+    const eq = p.indexOf("=");
+    if (eq > -1 && /^[a-zA-Z0-9]+$/.test(p.slice(0, eq))) {
+      named[p.slice(0, eq)] = p.slice(eq + 1);
+    } else {
+      positional.push(p);
+    }
+  }
+  const SKIP = ["root", "wp", "chemical element box", "col", "col3", "col4", "senseid", "lb", "qualifier", "enpr", "ipa", "audio", "der2", "der3"];
+  if (SKIP.includes(name)) return "";
+
+  // {{doublet|en|terbium|ytterbium}} — words sharing this word's origin
+  if (name === "doublet") {
+    const words = positional.slice(1).map((p) => p.trim()).filter(Boolean);
+    return words.length ? `doublet of ${words.join(", ")}` : "";
+  }
+
+  // {{w|Johan Gadolin}} / {{w|Margaret Todd (doctor)|Margaret Todd}} — Wikipedia link
+  if (name === "w") {
+    return (positional[1] || positional[0] || "").trim();
+  }
+
+  // {{coin|en|Margaret Todd|in=1909}} — who coined the word
+  if (name === "coin") {
+    const raw = positional.slice(1).find((p) => p.trim()) || named.w || "";
+    // Some entries name the coiner only by Wikidata ID, which we can't resolve
+    const who = /^Q\d+$/.test(raw.trim()) ? "" : raw.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    if (!who) return named.in ? `coined in ${named.in}` : "";
+    return named.in ? `coined by ${who} in ${named.in}` : `coined by ${who}`;
+  }
+
+  if (["m", "l", "term", "mention", "link"].includes(name)) {
+    const word = (positional[2] && positional[2].trim()) ? positional[2] : positional[1];
+    const gloss = positional[3] || named.t || "";
+    if (!word) return "";
+    return gloss ? `${word.trim()} (${gloss.trim()})` : word.trim();
+  }
+
+  if (["bor", "bor+", "der", "der+", "uder", "inh", "inh+", "borrowed", "derived", "inherited", "cog", "cognate"].includes(name)) {
+    // {{der|en|la|Holmia||Stockholm}} → [origLang, word, altDisplay, gloss]
+    const rest = positional.slice(1); // drop leading lang-of-the-result code
+    const langName = (WIKT_LANG_NAMES[rest[0]] || rest[0] || "").trim();
+    const word = (rest[1] || "").trim();
+    const gloss = (named.t || named.t1 || named.qq || rest[3] || "").trim();
+    // "-" is Wiktionary's placeholder for "language only, no specific word"
+    const base = word && word !== "-" ? `${langName} ${word}` : langName;
+    if (!base) return "";
+    return gloss ? `${base} (${gloss})` : base;
+  }
+
+  // Affix-like families: af, affix, prefix, suffix, suf, pre, confix, compound, com, ety
+  let rest = positional.slice(1); // drop leading lang-of-the-result code
+  rest = rest.filter((t) => !t.trim().startsWith(":"));
+  if (rest.length === 0) return "";
+  const isSuffix = ["suf", "suffix"].includes(name);
+  const rendered = rest
+    .map((t, idx) => {
+      const { text, gloss } = wiktCleanToken(t);
+      if (!text) return null;
+      const g = gloss || named["t" + (idx + 1)] || named["gloss" + (idx + 1)] || (rest.length === 1 ? named.t || named.gloss : "");
+      // {{suffix|en||ium}} means the affix "-ium"; restore the hyphen it implies
+      let shown = isSuffix && idx === rest.length - 1 && !text.startsWith("-") ? `-${text}` : text;
+      // {{af|en|lang1=grc|λανθάνω|...}} names each part's language in a separate param
+      const langCode = named["lang" + (idx + 1)];
+      if (langCode && WIKT_LANG_NAMES[langCode]) shown = `${WIKT_LANG_NAMES[langCode]} ${shown}`;
+      return g ? `${shown} (${g})` : shown;
+    })
+    .filter(Boolean);
+  return rendered.join(" + ");
+}
+
+function cleanWikitext(text) {
+  return text
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, "")
+    .replace(/<ref[^>]*\/>/gi, "")
+    .replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, "$2")
+    .replace(/\[\[([^\]]*)\]\]/g, "$1")
+    .replace(/'''([^']*)'''/g, "$1")
+    .replace(/''([^']*)''/g, "$1");
+}
+
+function renderEtymology(raw) {
+  let text = raw;
+  // {{ety|...|tree=1}} is a structured tree that usually restates the prose
+  // below it. Keep it only when it is the entire etymology.
+  const withoutTree = text.replace(/\{\{ety\|[^{}]*\}\}/g, "").trim();
+  if (withoutTree.replace(/[\s.,;]/g, "").length > 0) text = withoutTree;
+
+  for (let pass = 0; pass < 3; pass++) {
+    text = text.replace(/\{\{([^{}]*)\}\}/g, (_, inner) => renderWiktTemplate(inner));
+  }
+  text = cleanWikitext(text);
+  text = text
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{2,}/g, "\n")
+    .replace(/\s+([,.;])/g, "$1")
+    .replace(/\.(\s*\.)+/g, ".")
+    .replace(/^[,.\s]+/, "")
+    .replace(/([.!?]\s+)([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase())
+    .replace(/^([a-z])/, (ch) => ch.toUpperCase())
+    .trim();
+  return text;
+}
+
+async function lookupMorphology(word) {
+  const candidates = [...new Set([word, word.toLowerCase()])];
+  for (const title of candidates) {
+    const res = await fetch(
+      `https://en.wiktionary.org/w/api.php?action=parse&page=${encodeURIComponent(title)}&prop=wikitext&format=json&formatversion=2&origin=*`
+    );
+    if (!res.ok) continue;
+    const data = await res.json();
+    if (data.error) continue;
+    const wikitext = data.parse.wikitext;
+    const engMatch = wikitext.match(/==English==[\s\S]*?(?=\n==[^=]|$)/);
+    if (!engMatch) continue;
+    const etyMatch = engMatch[0].match(/===\s*Etymology[^=]*===\n([\s\S]*?)(?=\n===|\n==[^=]|$)/);
+    if (!etyMatch) continue;
+    const rendered = renderEtymology(etyMatch[1]);
+    if (rendered) return rendered;
+  }
+  return "";
 }
 
 document.getElementById("quick-add-form").addEventListener("submit", (e) => {
