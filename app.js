@@ -386,9 +386,9 @@ function cleanWikitext(text) {
 
 function renderEtymology(raw) {
   let text = raw;
-  // {{ety|...|tree=1}} is a structured tree that usually restates the prose
-  // below it. Keep it only when it is the entire etymology.
-  const withoutTree = text.replace(/\{\{ety\|[^{}]*\}\}/g, "").trim();
+  // {{ety|…|tree=1}} / {{etymon|…|tree=1}} render a structured tree that
+  // usually restates the prose below. Keep it only when it is the whole entry.
+  const withoutTree = text.replace(/\{\{[^{}]*\btree=1\b[^{}]*\}\}/g, "").trim();
   if (withoutTree.replace(/[\s.,;]/g, "").length > 0) text = withoutTree;
 
   for (let pass = 0; pass < 3; pass++) {
@@ -407,6 +407,73 @@ function renderEtymology(raw) {
   return text;
 }
 
+// Pull a named subsection out of the English part of a Wiktionary page
+function wiktSection(englishPart, name) {
+  const m = englishPart.match(new RegExp(`=+\\s*${name}\\s*=+\\n([\\s\\S]*?)(?=\\n=+[A-Z]|\\n==[^=]|$)`));
+  return m ? m[1] : "";
+}
+
+// Term lists appear either as {{col4|en\n|a\n|b}} or as "* {{l|en|a}}" bullets
+function extractTerms(section) {
+  const out = [];
+  const colRe = /\{\{col\d*(?:-auto)?\|en\s*\|([\s\S]*?)\}\}/g;
+  let m;
+  while ((m = colRe.exec(section))) {
+    out.push(...m[1].split("|").map((t) => t.trim()));
+  }
+  const linkRe = /\{\{l\|en\|([^|}]+)/g;
+  while ((m = linkRe.exec(section))) out.push(m[1].trim());
+  return out.filter((t) => t && !t.includes("=") && !t.includes(","));
+}
+
+// Words that visibly share this word's root — the payoff for learning morphology
+async function lookupRelatedWords(word, wikitext, englishPart) {
+  const lower = word.toLowerCase();
+  // Curated "Related terms" first; same-root category next; bare derivatives last
+  const candidates = extractTerms(wiktSection(englishPart, "Related terms"));
+  const derived = extractTerms(wiktSection(englishPart, "Derived terms"));
+
+  // The {{root|en|ine-pro|*lewk-}} tag maps to a category of same-root words.
+  // Keep only those that visibly share a stem — luminous/lucid, not light/lynx.
+  const rootMatch = wikitext.match(/\{\{root\|en\|[^|]+\|([^|}]+)/);
+  if (rootMatch) {
+    const stem = lower.replace(/(ously|ness|ing|ment|ous|ity|ate|al|ic|ly|ed)$/, "");
+    if (stem.length >= 4) {
+      try {
+        const cat = `Category:English terms derived from the Proto-Indo-European root ${rootMatch[1]}`;
+        const res = await fetch(
+          `https://en.wiktionary.org/w/api.php?action=query&list=categorymembers&cmtitle=${encodeURIComponent(cat)}&cmlimit=500&format=json&origin=*`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const members = ((data.query || {}).categorymembers || []).map((x) => x.title);
+          for (const t of members) {
+            if (t === t.toLowerCase() && t.includes(stem.slice(0, Math.max(4, stem.length - 1)))) {
+              candidates.push(t);
+            }
+          }
+        }
+      } catch {
+        // category lookup is a bonus — a failure just means fewer related words
+      }
+    }
+  }
+
+  const seen = new Set([lower]);
+  const out = [];
+  for (const c of [...candidates, ...derived]) {
+    const cl = c.toLowerCase();
+    if (seen.has(cl) || cl.includes(" ") || cl.includes("-") || cl.length > 16) continue;
+    // "nonluminous"/"luminousness" just wrap the word itself — they teach
+    // nothing about the root, so only the root-siblings are worth showing
+    if (cl.includes(lower)) continue;
+    seen.add(cl);
+    out.push(c);
+    if (out.length === 8) break;
+  }
+  return out;
+}
+
 async function lookupMorphology(word) {
   const candidates = [...new Set([word, word.toLowerCase()])];
   for (const title of candidates) {
@@ -421,8 +488,11 @@ async function lookupMorphology(word) {
     if (!engMatch) continue;
     const etyMatch = engMatch[0].match(/===\s*Etymology[^=]*===\n([\s\S]*?)(?=\n===|\n==[^=]|$)/);
     if (!etyMatch) continue;
-    const rendered = renderEtymology(etyMatch[1]);
-    if (rendered) return rendered;
+    let rendered = renderEtymology(etyMatch[1]);
+    if (!rendered) continue;
+    const related = await lookupRelatedWords(word, wikitext, engMatch[0]);
+    if (related.length) rendered += ` — Same root: ${related.join(", ")}.`;
+    return rendered;
   }
   return "";
 }
