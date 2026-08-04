@@ -147,6 +147,71 @@ h2, h3 { font-weight: 600; }
   font-weight: 600;
 }
 
+/* Claude bridge */
+#claude-bridge {
+  background: #23233a;
+  border: 1px solid #34344d;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.bridge-steps {
+  display: flex;
+  gap: 8px;
+}
+
+.bridge-btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  background: #444460;
+  color: #f0f0f5;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bridge-btn:disabled { opacity: 0.4; }
+.bridge-btn-primary { background: #7a7aff; color: #fff; }
+
+#bridge-hint {
+  font-size: 12px;
+  color: #9a9ab0;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+#paste-input {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  background: #1c1c28;
+  color: #f0f0f5;
+  font-size: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+
+.paste-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.paste-actions .bridge-btn { flex: 0 0 auto; padding: 8px 18px; }
+
+#paste-status {
+  font-size: 12px;
+  color: #9affc0;
+  line-height: 1.4;
+}
+
+#paste-status.paste-error { color: #ff9a9a; }
+
 .needs-details-row {
   display: flex;
   flex-direction: column;

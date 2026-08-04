@@ -1,5 +1,5 @@
-const CACHE_NAME = "vocab-cache-v4";
-const ASSETS = ["./", "index.html", "style.css?v=4", "app.js?v=4", "seed.js?v=4", "manifest.json"];
+const CACHE_NAME = "vocab-cache-v5";
+const ASSETS = ["./", "index.html", "style.css?v=5", "app.js?v=5", "seed.js?v=5", "manifest.json"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));

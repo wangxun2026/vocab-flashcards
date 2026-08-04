@@ -167,9 +167,142 @@ function refreshGroupDatalist() {
   dl.innerHTML = allGroups().map((g) => `<option value="${escapeHtml(g)}"></option>`).join("");
 }
 
+// ---------- Claude bridge (batch fill via copy/paste) ----------
+function buildClaudePrompt(words) {
+  return [
+    "You are helping me build vocabulary flashcards. For EACH word below, write one card.",
+    "",
+    "Return ONLY a JSON array, no commentary, no markdown fence. Each element:",
+    '{"word": "...", "definition": "...", "context": "...", "morphology": "...", "synonyms": "..."}',
+    "",
+    "Field guidance:",
+    '- definition: start with the part of speech in parentheses, then a concise definition. For a chemical element, include its symbol and atomic number.',
+    "- context: one vivid example sentence that makes the meaning stick — prefer a real-world use over a generic sentence.",
+    "- morphology: break the word into roots/prefixes/suffixes with each part's meaning and source language, THEN name 2-4 common English words that share the same root. This last part matters most to me.",
+    "- synonyms: up to 6, comma-separated. Empty string if there are none.",
+    "",
+    "Words:",
+    ...words.map((w) => `- ${w}`),
+  ].join("\n");
+}
+
+function pendingWords() {
+  return cards.filter((c) => !c.definition).map((c) => c.word);
+}
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // iOS Safari can refuse clipboard writes; fall back to a manual selection
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
+
+document.getElementById("btn-copy-prompt").addEventListener("click", async (e) => {
+  const words = pendingWords();
+  const hint = document.getElementById("bridge-hint");
+  if (words.length === 0) {
+    hint.textContent = "No words waiting for details — add some first.";
+    return;
+  }
+  const ok = await copyToClipboard(buildClaudePrompt(words));
+  hint.textContent = ok
+    ? `Copied a prompt for ${words.length} word${words.length > 1 ? "s" : ""}. Paste it into Claude, then come back with its answer.`
+    : "Couldn't copy automatically — long-press the prompt text to copy it manually.";
+  if (!ok) {
+    const ta = document.getElementById("paste-input");
+    document.getElementById("paste-area").style.display = "block";
+    ta.value = buildClaudePrompt(words);
+    ta.select();
+  }
+  e.target.textContent = "1 · Copied ✓";
+  setTimeout(() => (e.target.textContent = "1 · Copy prompt"), 2500);
+});
+
+function setPasteStatus(message, isError) {
+  const el = document.getElementById("paste-status");
+  el.textContent = message;
+  el.classList.toggle("paste-error", !!isError);
+}
+
+document.getElementById("btn-toggle-paste").addEventListener("click", () => {
+  const area = document.getElementById("paste-area");
+  area.style.display = area.style.display === "none" ? "block" : "none";
+  setPasteStatus("", false);
+  if (area.style.display === "block") document.getElementById("paste-input").focus();
+});
+
+// Claude may wrap the array in prose or a ```json fence — find the array itself
+function extractJsonArray(raw) {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const body = fenced ? fenced[1] : raw;
+  const start = body.indexOf("[");
+  const end = body.lastIndexOf("]");
+  if (start === -1 || end === -1 || end < start) throw new Error("no JSON array found");
+  return JSON.parse(body.slice(start, end + 1));
+}
+
+document.getElementById("btn-apply-paste").addEventListener("click", () => {
+  const raw = document.getElementById("paste-input").value.trim();
+  if (!raw) {
+    setPasteStatus("Nothing pasted yet.", true);
+    return;
+  }
+  let entries;
+  try {
+    entries = extractJsonArray(raw);
+    if (!Array.isArray(entries)) throw new Error("not an array");
+  } catch (err) {
+    setPasteStatus("Couldn't read that — paste Claude's full JSON answer.", true);
+    return;
+  }
+
+  let filled = 0;
+  const unmatched = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry.word !== "string") continue;
+    const target = cards.find((c) => c.word.toLowerCase() === entry.word.trim().toLowerCase());
+    if (!target) {
+      unmatched.push(entry.word);
+      continue;
+    }
+    if (typeof entry.definition === "string" && entry.definition.trim()) {
+      target.definition = entry.definition.trim();
+    }
+    if (typeof entry.context === "string") target.context = entry.context.trim();
+    if (typeof entry.morphology === "string") target.morphology = entry.morphology.trim();
+    if (typeof entry.synonyms === "string") target.synonyms = entry.synonyms.trim();
+    filled++;
+  }
+
+  saveCards(cards);
+  const parts = [`Filled ${filled} card${filled === 1 ? "" : "s"}.`];
+  if (unmatched.length) parts.push(`No match for: ${unmatched.join(", ")}.`);
+  setPasteStatus(parts.join(" "), filled === 0);
+  document.getElementById("paste-input").value = "";
+  renderAdd();
+});
+
 // ---------- Add ----------
 function renderAdd() {
   refreshGroupDatalist();
+  const pending = pendingWords().length;
+  document.getElementById("btn-copy-prompt").disabled = pending === 0;
   const list = document.getElementById("needs-details-list");
   list.innerHTML = "";
   const needsDetails = cards.filter((c) => !c.definition);

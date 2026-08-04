@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#1c1c28" />
-<link rel="stylesheet" href="style.css?v=4" />
+<link rel="stylesheet" href="style.css?v=5" />
 </head>
 <body>
 
@@ -41,6 +41,22 @@
     </form>
 
     <h3>Needs details (<span id="needs-details-count">0</span>)</h3>
+
+    <div id="claude-bridge">
+      <div class="bridge-steps">
+        <button id="btn-copy-prompt" class="bridge-btn">1 · Copy prompt</button>
+        <button id="btn-toggle-paste" class="bridge-btn">2 · Paste result</button>
+      </div>
+      <div id="bridge-hint">Paste the prompt into Claude, then bring its answer back here.</div>
+      <div id="paste-area" style="display:none;">
+        <textarea id="paste-input" placeholder="Paste Claude's JSON answer here..." rows="5"></textarea>
+        <div class="paste-actions">
+          <button id="btn-apply-paste" class="bridge-btn bridge-btn-primary">Fill cards</button>
+          <span id="paste-status"></span>
+        </div>
+      </div>
+    </div>
+
     <div id="needs-details-list"></div>
   </section>
 
@@ -64,7 +80,7 @@
 
 <datalist id="group-datalist"></datalist>
 
-<script src="seed.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="seed.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
