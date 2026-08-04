@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#1c1c28" />
-<link rel="stylesheet" href="style.css?v=5" />
+<link rel="stylesheet" href="style.css?v=6" />
 </head>
 <body>
 
@@ -49,6 +49,21 @@
         <button id="btn-toggle-paste" class="bridge-btn">2 · Paste result</button>
       </div>
       <div id="bridge-hint">Paste the prompt into Claude, then bring its answer back here.</div>
+      <button id="btn-toggle-key" class="key-link">API key settings</button>
+      <div id="key-area" style="display:none;">
+        <input type="password" id="key-input" placeholder="sk-ant-..." autocomplete="off" />
+        <select id="model-select">
+          <option value="claude-opus-4-8">Opus — best quality (~$0.008/card)</option>
+          <option value="claude-sonnet-5">Sonnet — balanced (~$0.005/card)</option>
+          <option value="claude-haiku-4-5">Haiku — cheapest (~$0.0017/card)</option>
+        </select>
+        <div class="key-actions">
+          <button id="btn-save-key" class="bridge-btn bridge-btn-primary">Save</button>
+          <button id="btn-clear-key" class="bridge-btn">Remove key</button>
+        </div>
+        <div id="key-status"></div>
+        <div class="key-note">Stored only on this device, never in the app's code. Revoke anytime at console.anthropic.com.</div>
+      </div>
       <div id="paste-area" style="display:none;">
         <textarea id="paste-input" placeholder="Paste Claude's JSON answer here..." rows="5"></textarea>
         <div class="paste-actions">
@@ -81,7 +96,7 @@
 
 <datalist id="group-datalist"></datalist>
 
-<script src="seed.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="seed.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

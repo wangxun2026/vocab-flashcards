@@ -218,6 +218,49 @@ h2, h3 { font-weight: 600; }
 
 #paste-status.paste-error { color: #ff9a9a; }
 
+.key-link {
+  display: block;
+  margin-top: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #7a7aff;
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+#key-area { margin-top: 10px; }
+
+#key-input, #model-select {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border: none;
+  background: #1c1c28;
+  color: #f0f0f5;
+  font-size: 15px;
+}
+
+.key-actions { display: flex; gap: 8px; }
+.key-actions .bridge-btn { padding: 8px 16px; }
+
+#key-status {
+  font-size: 12px;
+  color: #9affc0;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+#key-status.paste-error { color: #ff9a9a; }
+
+.key-note {
+  font-size: 11px;
+  color: #6a6a80;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
 .needs-details-row {
   display: flex;
   flex-direction: column;

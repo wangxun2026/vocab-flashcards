@@ -1,8 +1,19 @@
 const STORAGE_KEY = "vocab_cards_v1";
-// Claude-written cards. Empty until the Worker is deployed; Auto-fill then
-// falls back to the free dictionary + Wiktionary, which are weaker but free.
-const LOOKUP_WORKER_URL = "";
+// Claude writes the cards when an API key is stored on this device. The key
+// lives only in localStorage — never in this file or the repo. Without one,
+// Auto-fill falls back to the free dictionary + Wiktionary.
+const KEY_STORAGE = "vocab_api_key";
+const MODEL_STORAGE = "vocab_api_model";
+const DEFAULT_MODEL = "claude-opus-4-8";
 const BOX_INTERVALS_DAYS = [1, 1, 2, 4, 8, 16]; // index = box (1-5 used), box 0 unused
+
+function getApiKey() {
+  return localStorage.getItem(KEY_STORAGE) || "";
+}
+
+function getModel() {
+  return localStorage.getItem(MODEL_STORAGE) || DEFAULT_MODEL;
+}
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -281,6 +292,50 @@ document.getElementById("btn-fill-all").addEventListener("click", async (e) => {
   renderAdd();
 });
 
+// ---------- API key settings ----------
+function setKeyStatus(message, isError) {
+  const el = document.getElementById("key-status");
+  el.textContent = message;
+  el.classList.toggle("paste-error", !!isError);
+}
+
+document.getElementById("btn-toggle-key").addEventListener("click", () => {
+  const area = document.getElementById("key-area");
+  const opening = area.style.display === "none";
+  area.style.display = opening ? "block" : "none";
+  if (opening) {
+    document.getElementById("model-select").value = getModel();
+    const key = getApiKey();
+    setKeyStatus(key ? `Key saved (…${key.slice(-4)}).` : "No key yet — paste one to turn on automatic cards.", false);
+  }
+});
+
+document.getElementById("btn-save-key").addEventListener("click", () => {
+  const input = document.getElementById("key-input");
+  const key = input.value.trim();
+  const model = document.getElementById("model-select").value;
+  localStorage.setItem(MODEL_STORAGE, model);
+  if (key) {
+    if (!key.startsWith("sk-ant-")) {
+      setKeyStatus("That doesn't look like an Anthropic key (they start with sk-ant-).", true);
+      return;
+    }
+    localStorage.setItem(KEY_STORAGE, key);
+    input.value = "";
+    setKeyStatus(`Key saved (…${key.slice(-4)}). Model: ${model}.`, false);
+  } else {
+    setKeyStatus(getApiKey() ? `Model set to ${model}.` : "Paste a key first.", !getApiKey());
+  }
+  renderAdd();
+});
+
+document.getElementById("btn-clear-key").addEventListener("click", () => {
+  localStorage.removeItem(KEY_STORAGE);
+  document.getElementById("key-input").value = "";
+  setKeyStatus("Key removed from this device.", false);
+  renderAdd();
+});
+
 function setPasteStatus(message, isError) {
   const el = document.getElementById("paste-status");
   el.textContent = message;
@@ -332,12 +387,13 @@ function renderAdd() {
   refreshGroupDatalist();
   const pending = pendingWords().length;
   document.getElementById("btn-copy-prompt").disabled = pending === 0;
+  const hasKey = !!getApiKey();
   const fillAll = document.getElementById("btn-fill-all");
-  fillAll.style.display = LOOKUP_WORKER_URL ? "block" : "none";
+  fillAll.style.display = hasKey ? "block" : "none";
   fillAll.disabled = pending === 0;
   fillAll.textContent = pending ? `Fill all with Claude (${pending})` : "Fill all with Claude";
-  document.getElementById("bridge-hint").textContent = LOOKUP_WORKER_URL
-    ? "One tap writes every card. The two steps below work without credit."
+  document.getElementById("bridge-hint").textContent = hasKey
+    ? "One tap writes every card. The two steps below still work without credit."
     : "Paste the prompt into Claude, then bring its answer back here.";
   const list = document.getElementById("needs-details-list");
   list.innerHTML = "";
@@ -401,7 +457,7 @@ function renderAdd() {
 }
 
 async function lookupWord(word) {
-  if (LOOKUP_WORKER_URL) {
+  if (getApiKey()) {
     try {
       const [card] = await lookupViaClaude([word]);
       if (card) {
@@ -413,7 +469,7 @@ async function lookupWord(word) {
         };
       }
     } catch {
-      // Out of credit or Worker down — the free sources still beat nothing
+      // Out of credit or offline — the free sources still beat nothing
     }
   }
   const [dict, morphology] = await Promise.all([
@@ -429,15 +485,73 @@ async function lookupWord(word) {
   };
 }
 
+// Mirrors the guidance that produced the hand-written seed deck.
+const CARD_SYSTEM_PROMPT = `You write vocabulary flashcards for one learner. He is a native Chinese speaker with strong English, studying chemistry terms (especially the lanthanides) alongside general English vocabulary he meets in daily life.
+
+Write each card to be remembered, not merely to be correct:
+- definition: open with the part of speech in parentheses, then a tight definition. For a chemical element, give the symbol and atomic number.
+- context: ONE example sentence that anchors the word to something concrete and real — how the thing is actually used, where the word actually shows up. Avoid filler sentences that would fit any word.
+- morphology: split the word into roots/prefixes/suffixes, gloss each part and name its source language, then point to 2-4 COMMON English words sharing that root. This section matters most to him — the shared-root words are the payoff, so pick ones he plausibly already knows rather than obscure technical relatives.
+- synonyms: up to 6, comma-separated, closest first. Empty string when the word has none (most element names do not).
+
+Leave a field as an empty string rather than padding it with something weak.`;
+
+const CARD_SCHEMA = {
+  type: "object",
+  properties: {
+    cards: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          word: { type: "string" },
+          definition: { type: "string" },
+          context: { type: "string" },
+          morphology: { type: "string" },
+          synonyms: { type: "string" },
+        },
+        required: ["word", "definition", "context", "morphology", "synonyms"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["cards"],
+  additionalProperties: false,
+};
+
 async function lookupViaClaude(words) {
-  const res = await fetch(LOOKUP_WORKER_URL, {
+  const key = getApiKey();
+  if (!key) throw new Error("no api key");
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ words }),
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: getModel(),
+      max_tokens: 8000,
+      system: CARD_SYSTEM_PROMPT,
+      output_config: { format: { type: "json_schema", schema: CARD_SCHEMA } },
+      messages: [
+        {
+          role: "user",
+          content: `Write one card for each of these words:\n${words.map((w) => `- ${w}`).join("\n")}`,
+        },
+      ],
+    }),
   });
-  if (!res.ok) throw new Error("worker lookup failed");
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`api ${res.status}: ${detail.slice(0, 200)}`);
+  }
   const data = await res.json();
-  return data.cards || [];
+  if (data.stop_reason === "refusal") throw new Error("request was declined");
+  const text = (data.content || []).find((b) => b.type === "text");
+  if (!text) throw new Error("empty response");
+  return JSON.parse(text.text).cards || [];
 }
 
 async function lookupDictionary(word) {
