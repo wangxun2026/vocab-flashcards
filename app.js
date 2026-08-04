@@ -1,4 +1,7 @@
 const STORAGE_KEY = "vocab_cards_v1";
+// Claude-written cards. Empty until the Worker is deployed; Auto-fill then
+// falls back to the free dictionary + Wiktionary, which are weaker but free.
+const LOOKUP_WORKER_URL = "";
 const BOX_INTERVALS_DAYS = [1, 1, 2, 4, 8, 16]; // index = box (1-5 used), box 0 unused
 
 function todayStr() {
@@ -234,6 +237,50 @@ document.getElementById("btn-copy-prompt").addEventListener("click", async (e) =
   setTimeout(() => (e.target.textContent = "1 · Copy prompt"), 2500);
 });
 
+function applyCards(entries) {
+  let filled = 0;
+  const unmatched = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry.word !== "string") continue;
+    const target = cards.find((c) => c.word.toLowerCase() === entry.word.trim().toLowerCase());
+    if (!target) {
+      unmatched.push(entry.word);
+      continue;
+    }
+    if (typeof entry.definition === "string" && entry.definition.trim()) {
+      target.definition = entry.definition.trim();
+    }
+    if (typeof entry.context === "string") target.context = entry.context.trim();
+    if (typeof entry.morphology === "string") target.morphology = entry.morphology.trim();
+    if (typeof entry.synonyms === "string") target.synonyms = entry.synonyms.trim();
+    filled++;
+  }
+  saveCards(cards);
+  return { filled, unmatched };
+}
+
+document.getElementById("btn-fill-all").addEventListener("click", async (e) => {
+  const words = pendingWords();
+  if (!words.length) return;
+  const btn = e.target;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = `Writing ${words.length} card${words.length > 1 ? "s" : ""}…`;
+  try {
+    const { filled, unmatched } = applyCards(await lookupViaClaude(words));
+    const parts = [`Filled ${filled} card${filled === 1 ? "" : "s"}.`];
+    if (unmatched.length) parts.push(`No match for: ${unmatched.join(", ")}.`);
+    setPasteStatus(parts.join(" "), filled === 0);
+    document.getElementById("paste-area").style.display = "block";
+  } catch {
+    setPasteStatus("Claude lookup failed — check credit, or use the copy/paste steps below.", true);
+    document.getElementById("paste-area").style.display = "block";
+  }
+  btn.disabled = false;
+  btn.textContent = label;
+  renderAdd();
+});
+
 function setPasteStatus(message, isError) {
   const el = document.getElementById("paste-status");
   el.textContent = message;
@@ -272,25 +319,7 @@ document.getElementById("btn-apply-paste").addEventListener("click", () => {
     return;
   }
 
-  let filled = 0;
-  const unmatched = [];
-  for (const entry of entries) {
-    if (!entry || typeof entry.word !== "string") continue;
-    const target = cards.find((c) => c.word.toLowerCase() === entry.word.trim().toLowerCase());
-    if (!target) {
-      unmatched.push(entry.word);
-      continue;
-    }
-    if (typeof entry.definition === "string" && entry.definition.trim()) {
-      target.definition = entry.definition.trim();
-    }
-    if (typeof entry.context === "string") target.context = entry.context.trim();
-    if (typeof entry.morphology === "string") target.morphology = entry.morphology.trim();
-    if (typeof entry.synonyms === "string") target.synonyms = entry.synonyms.trim();
-    filled++;
-  }
-
-  saveCards(cards);
+  const { filled, unmatched } = applyCards(entries);
   const parts = [`Filled ${filled} card${filled === 1 ? "" : "s"}.`];
   if (unmatched.length) parts.push(`No match for: ${unmatched.join(", ")}.`);
   setPasteStatus(parts.join(" "), filled === 0);
@@ -303,6 +332,13 @@ function renderAdd() {
   refreshGroupDatalist();
   const pending = pendingWords().length;
   document.getElementById("btn-copy-prompt").disabled = pending === 0;
+  const fillAll = document.getElementById("btn-fill-all");
+  fillAll.style.display = LOOKUP_WORKER_URL ? "block" : "none";
+  fillAll.disabled = pending === 0;
+  fillAll.textContent = pending ? `Fill all with Claude (${pending})` : "Fill all with Claude";
+  document.getElementById("bridge-hint").textContent = LOOKUP_WORKER_URL
+    ? "One tap writes every card. The two steps below work without credit."
+    : "Paste the prompt into Claude, then bring its answer back here.";
   const list = document.getElementById("needs-details-list");
   list.innerHTML = "";
   const needsDetails = cards.filter((c) => !c.definition);
@@ -365,6 +401,21 @@ function renderAdd() {
 }
 
 async function lookupWord(word) {
+  if (LOOKUP_WORKER_URL) {
+    try {
+      const [card] = await lookupViaClaude([word]);
+      if (card) {
+        return {
+          definition: card.definition || "",
+          example: card.context || "",
+          morphology: card.morphology || "",
+          synonyms: card.synonyms || "",
+        };
+      }
+    } catch {
+      // Out of credit or Worker down — the free sources still beat nothing
+    }
+  }
   const [dict, morphology] = await Promise.all([
     lookupDictionary(word).catch(() => null),
     lookupMorphology(word).catch(() => ""),
@@ -376,6 +427,17 @@ async function lookupWord(word) {
     synonyms: dict ? dict.synonyms : "",
     morphology,
   };
+}
+
+async function lookupViaClaude(words) {
+  const res = await fetch(LOOKUP_WORKER_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ words }),
+  });
+  if (!res.ok) throw new Error("worker lookup failed");
+  const data = await res.json();
+  return data.cards || [];
 }
 
 async function lookupDictionary(word) {
