@@ -310,6 +310,21 @@ document.getElementById("btn-toggle-key").addEventListener("click", () => {
   }
 });
 
+const MODEL_LABELS = {
+  "claude-opus-4-8": "Opus",
+  "claude-sonnet-5": "Sonnet",
+  "claude-haiku-4-5": "Haiku",
+};
+
+// The picker applies on change — waiting for Save made it look like the
+// choice had taken effect when it had not.
+document.getElementById("model-select").addEventListener("change", (e) => {
+  const model = e.target.value;
+  localStorage.setItem(MODEL_STORAGE, model);
+  setKeyStatus(`Now using ${MODEL_LABELS[model] || model}.`, false);
+  renderAdd();
+});
+
 document.getElementById("btn-save-key").addEventListener("click", () => {
   const input = document.getElementById("key-input");
   const key = input.value.trim();
@@ -388,12 +403,15 @@ function renderAdd() {
   const pending = pendingWords().length;
   document.getElementById("btn-copy-prompt").disabled = pending === 0;
   const hasKey = !!getApiKey();
+  const model = getModel();
   const fillAll = document.getElementById("btn-fill-all");
   fillAll.style.display = hasKey ? "block" : "none";
   fillAll.disabled = pending === 0;
-  fillAll.textContent = pending ? `Fill all with Claude (${pending})` : "Fill all with Claude";
+  fillAll.textContent = pending
+    ? `Fill all with ${MODEL_LABELS[model] || model} (${pending})`
+    : `Fill all with ${MODEL_LABELS[model] || model}`;
   document.getElementById("bridge-hint").textContent = hasKey
-    ? "One tap writes every card. The two steps below still work without credit."
+    ? `Writing with ${MODEL_LABELS[model] || model}. The two steps below still work without credit.`
     : "Paste the prompt into Claude, then bring its answer back here.";
   const list = document.getElementById("needs-details-list");
   list.innerHTML = "";
