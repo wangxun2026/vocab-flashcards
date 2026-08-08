@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#1c1c28" />
-<link rel="stylesheet" href="style.css?v=7" />
+<link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
 
@@ -79,8 +79,16 @@
   <section id="view-browse" class="view">
     <div class="browse-toolbar">
       <input type="text" id="browse-search" placeholder="Search..." />
-      <select id="browse-filter">
-        <option value="all">all</option>
+    </div>
+    <div class="browse-toolbar">
+      <select id="browse-filter" aria-label="Filter by group">
+        <option value="all">All groups</option>
+      </select>
+      <select id="browse-sort" aria-label="Sort order">
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="alpha">A → Z</option>
+        <option value="weakest">Weakest first</option>
       </select>
     </div>
     <div id="browse-count"></div>
@@ -96,7 +104,7 @@
 
 <datalist id="group-datalist"></datalist>
 
-<script src="seed.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="seed.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

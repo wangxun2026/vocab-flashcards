@@ -13,7 +13,12 @@ main {
   max-width: 480px;
   margin: 0 auto;
   padding: 16px;
+  /* The status bar is translucent and content runs underneath it, so the top
+     inset has to be added or the first control sits under the clock. */
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
   padding-bottom: 90px;
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
   min-height: 100vh;
 }
 
@@ -316,8 +321,10 @@ h2, h3 { font-weight: 600; }
 .browse-toolbar {
   display: flex;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
+
+.browse-toolbar select { flex: 1; min-width: 0; }
 
 #browse-search {
   flex: 1;
@@ -328,12 +335,13 @@ h2, h3 { font-weight: 600; }
   color: #f0f0f5;
 }
 
-#browse-filter {
+#browse-filter, #browse-sort {
   padding: 10px;
   border-radius: 8px;
   border: none;
   background: #2a2a3d;
   color: #f0f0f5;
+  font-size: 14px;
 }
 
 #browse-count {

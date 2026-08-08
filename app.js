@@ -848,23 +848,47 @@ document.getElementById("quick-add-form").addEventListener("submit", (e) => {
 });
 
 // ---------- Browse ----------
+const SORT_STORAGE = "vocab_browse_sort";
+
+// cards[] is in insertion order, so index doubles as "when it was added" —
+// createdAt is only a date and ties on everything added the same day.
+function sortCards(list, mode) {
+  const order = new Map(cards.map((c, i) => [c.id, i]));
+  const byIndex = (a, b) => order.get(a.id) - order.get(b.id);
+  const sorted = list.slice();
+  switch (mode) {
+    case "oldest":
+      return sorted.sort(byIndex);
+    case "alpha":
+      return sorted.sort((a, b) => a.word.localeCompare(b.word, undefined, { sensitivity: "base" }));
+    case "weakest":
+      // Low box = keeps being forgotten. Ties break to whatever is due soonest.
+      return sorted.sort((a, b) => a.box - b.box || a.dueDate.localeCompare(b.dueDate) || byIndex(a, b));
+    case "newest":
+    default:
+      return sorted.sort((a, b) => byIndex(b, a));
+  }
+}
+
 function renderBrowse() {
   const filterEl = document.getElementById("browse-filter");
   const prevFilter = filterEl.value;
   filterEl.innerHTML =
-    '<option value="all">all</option>' +
+    '<option value="all">All groups</option>' +
     allGroups().map((g) => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join("");
   filterEl.value = [...filterEl.options].some((o) => o.value === prevFilter) ? prevFilter : "all";
   const list = document.getElementById("browse-list");
   const search = document.getElementById("browse-search").value.trim().toLowerCase();
   const filterCat = filterEl.value;
+  const sortMode = document.getElementById("browse-sort").value;
   list.innerHTML = "";
-  const filtered = cards.filter((c) => {
+  const matched = cards.filter((c) => {
     const haystack = [c.word, c.definition, c.context, c.morphology, c.synonyms].join(" ").toLowerCase();
     const matchesSearch = !search || haystack.includes(search);
     const matchesCat = filterCat === "all" || c.category === filterCat;
     return matchesSearch && matchesCat;
   });
+  const filtered = sortCards(matched, sortMode);
   document.getElementById("browse-count").textContent = `${filtered.length} / ${cards.length} words`;
   filtered.forEach((c) => {
     const row = document.createElement("div");
@@ -948,6 +972,11 @@ function renderEditForm(row, c) {
 
 document.getElementById("browse-search").addEventListener("input", renderBrowse);
 document.getElementById("browse-filter").addEventListener("change", renderBrowse);
+document.getElementById("browse-sort").addEventListener("change", (e) => {
+  localStorage.setItem(SORT_STORAGE, e.target.value);
+  renderBrowse();
+});
+document.getElementById("browse-sort").value = localStorage.getItem(SORT_STORAGE) || "newest";
 
 function escapeHtml(str) {
   const div = document.createElement("div");
